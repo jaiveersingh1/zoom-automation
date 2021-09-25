@@ -21,13 +21,14 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.keys import Keys
 import time
 import csv
 import os
 import click
 from datetime import datetime
 
-MAX_WAIT = 10
+MAX_WAIT = 30
 
 def id_click(driver, id):
     WebDriverWait(driver, MAX_WAIT).until(EC.element_to_be_clickable((By.ID, id)))
@@ -68,7 +69,7 @@ def create_meeting(driver, email, topic, cohost, when, duration):
     # Recurring / When+Duration
     if when == 0 or duration == 0:
         css_checkbox(driver, "#option_rm", True)
-        css_click(driver, "#recurrenceType")
+        css_click(driver, 'input[aria-controls="recurrenceType-popup-list"]')
         css_click(driver, "#select-item-recurrenceType-3") # No Fixed Time
     else:
         datetime_obj = datetime.fromtimestamp(when)
@@ -88,8 +89,8 @@ def create_meeting(driver, email, topic, cohost, when, duration):
         css_click(driver, "#duration_min")
         css_click(driver, "#select-item-duration_min-" + str((duration % 60) // 15))
 
-    # Registration
-    css_checkbox(driver, "#option_registration", False)
+        # Registration
+        css_checkbox(driver, "#option_registration", False)
     
     # Meeting ID
     css_click(driver, "#optionOneTimeId")
@@ -118,6 +119,8 @@ def create_meeting(driver, email, topic, cohost, when, duration):
         css_fill(driver, "#mtg_alternative_host input", email)
         try:
             css_click(driver, "#select-item-select-alter-0")
+            css_fill(driver, "#mtg_alternative_host input", Keys.ESCAPE)
+
         except Exception:
             print("FAILURE: " + email)
             # return "ERROR"
@@ -136,7 +139,9 @@ def create_meeting(driver, email, topic, cohost, when, duration):
 
 @click.command()
 @click.argument('input', type=click.File('r'))
-@click.argument('output', type=click.File('w'))
+@click.argument('output', type=click.File('a'))
+
+@click.option('-i', '--index', default=0, type=int, help="Index from which to resume generation after a failure")
 
 @click.option('-t', '--topic', default="Meeting (@)", help="Name of meeting")
 @click.option('-c', '--cohost', default=False, is_flag=True, help='Add emails as cohosts')
@@ -147,9 +152,10 @@ def create_meeting(driver, email, topic, cohost, when, duration):
 
 @click.option('-b', '--browser', default="chrome", type=click.Choice(['chrome', 'firefox'], case_sensitive=False), help="Selenium WebDriver")
 
-def run(input, output, topic, cohost, when, duration, browser):
+def run(input, output, index, topic, cohost, when, duration, browser):
     email_reader = csv.reader(input)
-    next(email_reader) # skip header row
+    for _ in range(index + 1):
+        next(email_reader) # skip header row and previously-generated rows
     zoom_writer = csv.writer(output, lineterminator='\n')
     zoom_writer.writerow(["Email", "Link"])
 
@@ -158,9 +164,10 @@ def run(input, output, topic, cohost, when, duration, browser):
     if browser == "firefox":
         driver = webdriver.Firefox()
 
-    for row in email_reader:
+    for i, row in enumerate(email_reader):
         if row:
             email = row[0]
+            print(f"Starting index {i + index}")
             link = create_meeting(driver, email, topic.replace("@", email), cohost, when, duration)
             zoom_writer.writerow([email, link])
 
